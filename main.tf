@@ -16,7 +16,7 @@ resource "aws_instance" "second_instance_with_user_data" {
   user_data = <<-EOF
               #!/bin/bash
               echo "Hello, World" > index.xhtml
-              nohup busybox http -f -p 8080 &
+              nohup busybox http -f -p ${var.server_port} &
               EOF
 
   # if user_data changes, replace the instance
@@ -33,8 +33,8 @@ resource "aws_security_group" "sg_second_instance" {
   name = "sg_for_second_instance"
 
   ingress {
-    from_port   = 8080
-    to_port     = 8080
+    from_port   = var.server_port
+    to_port     = var.server_port
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
