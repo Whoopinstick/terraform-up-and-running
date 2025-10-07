@@ -9,9 +9,10 @@ resource "aws_instance" "first_instance" {
 }
 
 resource "aws_instance" "second_instance_with_user_data" {
-  ami             = data.aws_ami.ubuntu_22.id
-  instance_type   = "t3.micro"
-  security_groups = [aws_security_group.sg_second_instance.id]
+  ami           = data.aws_ami.ubuntu_22.id
+  instance_type = "t3.micro"
+  # security_groups = [aws_security_group.sg_second_instance.id]
+  vpc_security_group_ids = [aws_security_group.sg_second_instance.id]
 
   user_data = <<-EOF
               #!/bin/bash
@@ -42,27 +43,58 @@ resource "aws_security_group" "sg_second_instance" {
 }
 
 
-resource "aws_launch_configuration" "third_instance_with_asg" {
-  image_id        = data.aws_ami.ubuntu_22.id
-  instance_type   = "t3.micro"
-  security_groups = [aws_security_group.sg_second_instance.id]
-  user_data       = <<-EOF
-#!/bin/bash
-echo "Hello, World" > index.xhtml
-nohup busybox httpd -f -p ${var.server_port} &
-EOF
+# doesn't work with kodekloud playgrounds, seems to be old ASG feature
 
-  # Required when using a launch configuration with an auto scaling group.
+# resource "aws_launch_configuration" "third_instance_with_asg" {
+#   image_id        = data.aws_ami.ubuntu_22.id
+#   instance_type   = "t3.micro"
+#   security_groups = [aws_security_group.sg_second_instance.id]
+#   user_data       = <<-EOF
+# #!/bin/bash
+# echo "Hello, World" > index.xhtml
+# nohup busybox httpd -f -p ${var.server_port} &
+# EOF
+
+#   # Required when using a launch configuration with an auto scaling group.
+#   lifecycle {
+#     create_before_destroy = true
+#   }
+
+# }
+
+
+resource "aws_launch_template" "third_instance_with_asg" {
+  name_prefix   = "third-instance-"
+  image_id      = data.aws_ami.ubuntu_22.id
+  instance_type = "t3.micro"
+
+  vpc_security_group_ids = [aws_security_group.sg_second_instance.id]
+
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    echo "Hello, World" > index.xhtml
+    nohup busybox httpd -f -p ${var.server_port} &
+    EOF
+  )
+
+  # Optional but recommended: define update behavior
+  update_default_version = true
+
   lifecycle {
     create_before_destroy = true
   }
-
 }
 
+
 resource "aws_autoscaling_group" "asg_third_instance" {
-  launch_configuration = aws_launch_configuration.third_instance_with_asg.name
+  # kk playground doesn't work with launch_configuration
+  # launch_configuration = aws_launch_configuration.third_instance_with_asg.name
+  launch_template {
+    id = aws_launch_template.third_instance_with_asg.id
+    version = "$Latest"
+  }
   vpc_zone_identifier  = data.aws_subnets.default.ids
-  target_group_arns    = [aws_lb.lb_third_instance.arn]
+  target_group_arns    = [aws_lb_target_group.tg_asg_third_instance.arn]
   health_check_type    = "ELB"
 
   min_size = 2
@@ -144,3 +176,8 @@ resource "aws_lb_listener_rule" "asg" {
     target_group_arn = aws_lb_target_group.tg_asg_third_instance.arn
   }
 }
+
+
+
+# the app doesn't seem to be running on port 8080
+# do SSH key on a manual instance and try it out
